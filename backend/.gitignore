@@ -15,3 +15,6 @@ build/
 
 .idea/
 //*/secrets.py
+testing_secrets.py
+gmail_creds.json
+token.json
