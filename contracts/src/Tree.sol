@@ -31,6 +31,8 @@ contract Tree {
     mapping(bytes32 => string) private _carvings;
     /// @notice Array to store public gallery carving IDs.
     bytes32[] public gallery;
+    /// @notice Tracks the nonce for each carving ID (to prevent replay attacks in gallery actions).
+    mapping(bytes32 => uint256) public galleryNonces;
     /// @notice Mapping to manage officiant roles. Officiants can carve and remove.
     mapping(address => bool) public officiants;
     /// @notice Mapping to prevent replay attacks by tracking used signatures.
@@ -110,7 +112,8 @@ contract Tree {
      * @notice Adds a carving to the public gallery.
      * @param carvingId The unique ID of the carving to be publicized.
      */
-    function publicize(bytes32 carvingId) external onlyOfficiant {
+    function publicize(bytes32 carvingId, bytes memory signature) external onlyOfficiant {
+        _verifySignature(carvingId, signature);
         if (bytes(_carvings[carvingId]).length == 0) revert CarvingNotFound();
         gallery.push(carvingId);
         emit CarvingPublicized(carvingId);
@@ -120,7 +123,8 @@ contract Tree {
      * @notice Removes a carving from the public gallery.
      * @param carvingId The unique ID of the carving to be removed from the gallery.
      */
-    function hide(bytes32 carvingId) external onlyOfficiant {
+    function hide(bytes32 carvingId, bytes memory signature) external onlyOfficiant {
+        _verifySignature(carvingId, signature);
         for (uint256 i = 0; i < gallery.length; i++) {
             if (gallery[i] == carvingId) {
                 gallery[i] = gallery[gallery.length - 1];
@@ -157,6 +161,7 @@ contract Tree {
      * @param carvingId The unique ID of the carving.
      * @param message The message to be carved.
      * @param signature The ECDSA signature to verify.
+     * @dev Ensures the signature is valid and not previously used.
      */
     function _verifySignature(bytes32 carvingId, string memory message, bytes memory signature) private {
         if (signature.length == 0) {
@@ -169,5 +174,32 @@ contract Tree {
         if (!officiants[signer]) revert InvalidSignature();
         if (_usedSignatures[signature]) revert SignatureAlreadyUsed();
         _usedSignatures[signature] = true;
+    }
+
+    /**
+     * @notice Verifies an ECDSA signature from an officiant using gallery nonce.
+     * @param carvingId The unique ID of the carving.
+     * @param signature The ECDSA signature to verify.
+     * @dev Ensures the signature is valid, not previously used, and includes the current nonce. 
+     */
+    function _verifySignature(
+        bytes32 carvingId,
+        bytes memory signature
+    ) private {
+        if (signature.length == 0) {
+            if (!officiants[msg.sender]) revert NotOfficiant();
+            return;
+        }
+
+        uint256 nonce = galleryNonces[carvingId];
+        bytes32 messageHash = keccak256(abi.encodePacked(carvingId, nonce));
+        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        address signer = ECDSA.recover(ethSignedMessageHash, signature);
+
+        if (!officiants[signer]) revert InvalidSignature();
+        if (_usedSignatures[signature]) revert SignatureAlreadyUsed();
+        // Mark signature as used and increment gallery nonce.
+        _usedSignatures[signature] = true;
+        galleryNonces[carvingId] = nonce + 1;
     }
 }
