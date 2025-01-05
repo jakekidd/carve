@@ -50,6 +50,7 @@ contract TestTree is Test {
     // Test for failing dismissal of oneself.
     function test_Tree__dismiss_shouldFailWhenTryingToDismissSelf() public {
         vm.expectRevert(Tree.CannotDismissSelf.selector);
+        vm.prank(officiant);
         tree.dismiss(officiant);
     }
 
@@ -78,10 +79,11 @@ contract TestTree is Test {
     function test_Tree__scratch_shouldSucceedWhenCalledByRelayer() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving5"));
         string memory message = "To be removed.";
-        bytes memory signature = helper_sign(carvingId, message);
+        bytes memory carveSignature = helper_sign(carvingId, message);
+        bytes memory scratchSignature = helper_sign(carvingId, "");
 
-        relayer.relayCarve(address(tree), carvingId, message, signature);
-        relayer.relayScratch(address(tree), carvingId, signature);
+        relayer.relayCarve(address(tree), carvingId, message, carveSignature);
+        relayer.relayScratch(address(tree), carvingId, scratchSignature);
 
         vm.expectRevert(Tree.CarvingNotFound.selector);
         tree.read(carvingId);
