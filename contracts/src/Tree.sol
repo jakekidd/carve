@@ -109,7 +109,6 @@ contract Tree {
     /**
      * @notice Adds a carving to the public gallery.
      * @param carvingId The unique ID of the carving to be publicized.
-     * @param signature The ECDSA signature from an officiant.
      */
     function publicize(bytes32 carvingId) external onlyOfficiant {
         if (bytes(_carvings[carvingId]).length == 0) revert CarvingNotFound();
