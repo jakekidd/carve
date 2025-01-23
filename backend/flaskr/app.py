@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from markupsafe import escape
 from email_validator import validate_email, EmailNotValidError
 from hashlib import sha256
 import tree
 import local_constants
 import local_secrets
+import stripe
 
 app = Flask(__name__)
 
@@ -91,6 +92,30 @@ def delete_carving(carving_id):
     else:
         return {"carving_id:": carving_id, "message": "Deletion failed."}, 404
 
+@app.post("/stripe_webhook")
+def stripe_webhook():
+    payload = request.get_data(as_text=True)
+    sig_header = request.headers.get("Stripe-Signature")
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, stripe_keys["endpoint_secret"]
+        )
+
+    except ValueError as e:
+        # Invalid payload
+        return "Invalid payload", 400
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        return "Invalid signature", 400
+
+    # Handle the checkout.session.completed event
+    if event["type"] == "checkout.session.completed":
+        print("Payment was successful.")
+        # TODO: run some custom code here
+
+    return "Success", 200
+
+
+    if __name__ == '__main__':
+        app.run(debug=True)

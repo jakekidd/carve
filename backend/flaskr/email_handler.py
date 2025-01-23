@@ -44,7 +44,7 @@ def gmail_send_message(recepient: str, subject: str, body: str):
     service = build("gmail", "v1", credentials=creds)
     message = EmailMessage()
 
-    message.set_content(body)
+    message.add_alternative(body, subtype='html')
 
     message["To"] = recepient
     message["From"] = testing_secrets.sender_email
