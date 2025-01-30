@@ -1,20 +1,20 @@
 import os
-from email.policy import default
-
 from flask import Flask, render_template, request, jsonify
 from markupsafe import escape
 from email_validator import validate_email, EmailNotValidError
 from hashlib import sha256
-import tree
-import local_constants
-import local_secrets
-import testing_secrets
 import stripe
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 import time
 from dataclasses import dataclass
+
+import blockchain_handler
+from parameter_handler import ParameterHandler
+import email_handler
+import scheduled_tasks
+
+parameters = ParameterHandler()
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
@@ -24,28 +24,38 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 
-@app.get('/db_debug') # FIXME DEBUG
+scheduled_tasks.start_tasks()
+
+
+@app.get('/db_debug_remove_this_before_publishing') # FIXME DEBUG
 def db_debug():
-    return jsonify(CarvingOrder.query.all())
+    return {"orders": jsonify(CarvingOrder.query.all()),
+            "reminders": jsonify(SentReminderEmail.query.all())}
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CarvingOrder(db.Model):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(db.Integer, primary_key=True)
-    object_id: Mapped[str] = mapped_column(db.String(30), unique=True)
-    payment_id: Mapped[str] = mapped_column(db.String(30), unique=True)
-    carving_text: Mapped[str] = mapped_column(db.String(local_constants.carving_length_limit))
+    object_id: Mapped[str] = mapped_column(db.String(30), unique=True, index=True)
+    payment_id: Mapped[str] = mapped_column(db.String(30), unique=True, index=True)
+    carving_text: Mapped[str] = mapped_column(db.String(parameters.carving_length_limit))
     provided_email: Mapped[str] = mapped_column(db.String(320))
     receipt_email: Mapped[str] = mapped_column(db.String(320))
-    created_at: Mapped[int] = mapped_column(db.Double)
-    received_at: Mapped[int] = mapped_column(db.Double, default=time.time)
+    created_at: Mapped[float] = mapped_column(db.Double)
+    received_at: Mapped[float] = mapped_column(db.Double, default=time.time)
     blockchain_executed: Mapped[bool] = mapped_column(db.Boolean, default=False)
     email_sent: Mapped[bool] = mapped_column(db.Boolean, default=False)
 
-    def __repr__(self):
-        return f'<CarvingOrder {self.payment_id}>'
+
+@dataclass(kw_only=True)
+class SentReminderEmail(db.Model):
+    __tablename__ = "reminders"
+
+    id: Mapped[int] = mapped_column(db.Integer, primary_key=True)
+    email_address: Mapped[str] = mapped_column(db.String(320), index=True)
+    time_sent: Mapped[float] = mapped_column(db.Double, default=time.time, index=True)
 
 
 @app.get("/")
@@ -62,7 +72,7 @@ def retrieve_carving_message(carving_id):
         int(carving_id, 16)
     except ValueError:
         return render_template('error/generic.html', message=f"Carving ID is not valid."), 400
-    return {"carving_id:": carving_id, "message": tree.read(carving_id)}
+    return {"carving_id:": carving_id, "message": blockchain_handler.read(carving_id)}
 
 
 @app.post('/carvings')
@@ -75,20 +85,22 @@ def email_all_carvings():
         email = validate_email(submitted_email, check_deliverability=False).normalized
     except EmailNotValidError as e:
         return render_template('error/generic.html', message=f"Email invalid."), 400
-    user_id = sha256(f"email:{local_secrets.user_id_salt}".encode('utf-8')).hexdigest()
+    user_id = sha256(f"email:{parameters.user_id_salt}".encode('utf-8')).hexdigest()
     failed_carving_indices = 0
     carving_index = 0
     valid_carving_ids = []
-    while failed_carving_indices < local_constants.max_index_failures:
-        carving_id = sha256(f"user_id:{carving_index}:{local_secrets.carving_id_salt}".encode('utf-8')).hexdigest()
+    while failed_carving_indices < parameters.max_index_failures:
+        carving_id = sha256(f"user_id:{carving_index}:{parameters.carving_id_salt}".encode('utf-8')).hexdigest()
         carving_index += 1
-        carving_text = tree.read(carving_id)
+        carving_text = blockchain_handler.read(carving_id)
         if not carving_text:
             failed_carving_indices += 1
         else:
             valid_carving_ids.append(carving_id)
     carving_id_text = "\n".join(f"https://carve.xyz/inscription?id={carving_id}" for carving_id in valid_carving_ids)
-    # todo: send e-mail
+    # send email
+    email_handler.send_template_email(email, "Your carvings", "carvings_email.html", carving_text=carving_id_text)
+
 
 @app.post('/carvings')
 def publicize_carving():
@@ -102,7 +114,7 @@ def publicize_carving():
         int(carving_id, 16)
     except ValueError:
         return render_template('error/generic.html', message=f"Carving ID is not valid."), 400
-    if tree.publicize(carving_id):
+    if blockchain_handler.publicize(carving_id):
         return {"carving_id:": carving_id, "message": "Carving publicized (stub)."}
     else:
         return {"carving_id:": carving_id, "message": "Publicizing failed."}, 400
@@ -110,10 +122,10 @@ def publicize_carving():
 
 @app.get('/peruse')
 def peruse_carvings():
-    public_carving_ids = tree.peruse()
+    public_carving_ids = blockchain_handler.peruse()
     found_carvings = []
     for carving_id in public_carving_ids:
-        carving_content = tree.read(carving_id)
+        carving_content = blockchain_handler.read(carving_id)
         if carving_content:
             found_carvings.append(carving_content)
     return found_carvings
@@ -123,9 +135,9 @@ def peruse_carvings():
 def delete_carving(carving_id):
     request_json = request.get_json()
     # todo: rework with secrets
-    if "api_key" not in request_json or request_json.get("api_key") != local_secrets.admin_api_key:
+    if "api_key" not in request_json or request_json.get("api_key") != parameters.admin_key:
         return render_template('error/generic.html', message=f"nope"), 403
-    if tree.scratch(carving_id):
+    if blockchain_handler.scratch(carving_id):
         return {"carving_id:": carving_id, "message": "Deletion successful."}, 200
     else:
         return {"carving_id:": carving_id, "message": "Deletion failed."}, 404
@@ -139,7 +151,7 @@ def stripe_webhook():
 
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig_header, testing_secrets.stripe_secret
+            payload, sig_header, parameters.stripe_api_key
         )
 
     except ValueError as e:
