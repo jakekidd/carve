@@ -14,12 +14,13 @@ contract TestRelayer {
      * @notice Relays a carve request to the target contract.
      * @param target The address of the target contract.
      * @param carvingId The unique ID of the carving.
+     * @param properties The properties for the carving.
      * @param message The message to be carved.
      * @param signature The ECDSA signature from an officiant.
      */
-    function relayCarve(address target, bytes32 carvingId, string memory message, bytes memory signature) external {
+    function relayCarve(address target, bytes32 carvingId, bytes32 properties, string memory message, bytes memory signature) external {
         (bool success, ) = target.call(
-            abi.encodeWithSignature("carve(bytes32,string,bytes)", carvingId, message, signature)
+            abi.encodeWithSignature("carve(bytes32,bytes32,string,bytes)", carvingId, properties, message, signature)
         );
         require(success, "Carve relay failed");
     }
@@ -28,11 +29,22 @@ contract TestRelayer {
      * @notice Relays a scratch request to the target contract.
      * @param target The address of the target contract.
      * @param carvingId The unique ID of the carving to be removed.
+     * @param properties The properties for the carving.
      * @param signature The ECDSA signature from an officiant.
      */
-    function relayScratch(address target, bytes32 carvingId, bytes memory signature) external {
+    function relayScratch(
+        address target,
+        bytes32 carvingId,
+        bytes32 properties,
+        bytes memory signature
+    ) external {
         (bool success, ) = target.call(
-            abi.encodeWithSignature("scratch(bytes32,bytes)", carvingId, signature)
+            abi.encodeWithSignature(
+                "scratch(bytes32,bytes32,bytes)",
+                carvingId,
+                properties,
+                signature
+            )
         );
         require(success, "Scratch relay failed");
     }

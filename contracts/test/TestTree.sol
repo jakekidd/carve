@@ -10,8 +10,6 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 contract TestTree is Test {
     Tree tree;
     TestRelayer relayer;
-    // Our 'officiant' that creates the contract and produces signatures to simulate relayer activity.
-    // Private key exclusively used for unit tests.
     address officiant;
     uint256 officiantPrivateKey = 0x2f994cfe918405258483ae1a03d46d1289968c0e022fdbac9a5e7044f8cc8ea9;
 
@@ -23,15 +21,13 @@ contract TestTree is Test {
     }
 
     /// HELPERS
-    // Helper function to sign a carving action.
-    function helper_signCarve(bytes32 carvingId, string memory message) internal view returns (bytes memory) {
-        bytes32 messageHash = keccak256(abi.encodePacked(carvingId, message));
+    function helper_signCarve(bytes32 carvingId, bytes32 properties, string memory message) internal view returns (bytes memory) {
+        bytes32 messageHash = keccak256(abi.encodePacked(carvingId, properties, message));
         bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(officiantPrivateKey, ethSignedMessageHash);
         return abi.encodePacked(r, s, v);
     }
 
-    // Helper function to sign a gallery action with nonce.
     function helper_signGallery(bytes32 carvingId, uint256 nonce) internal view returns (bytes memory) {
         bytes32 messageHash = keccak256(abi.encodePacked(carvingId, nonce));
         bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
@@ -39,15 +35,13 @@ contract TestTree is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    /// OFFICIANT MUTEX METHODS
-    // Test for successful appointing of a new officiant.
+    /// OFFICIANT METHODS
     function test_Tree__appoint_shouldSucceedWhenCalledByExistingOfficiant() public {
         address newOfficiant = address(0x456);
         tree.appoint(newOfficiant);
         assertTrue(tree.officiants(newOfficiant));
     }
 
-    // Test for successful removal of an officiant.
     function test_Tree__dismiss_shouldSucceedWhenCalledByExistingOfficiant() public {
         address newOfficiant = address(0x456);
         tree.appoint(newOfficiant);
@@ -55,7 +49,6 @@ contract TestTree is Test {
         assertFalse(tree.officiants(newOfficiant));
     }
 
-    // Test for failing dismissal of oneself.
     function test_Tree__dismiss_shouldFailWhenTryingToDismissSelf() public {
         vm.expectRevert(Tree.CannotDismissSelf.selector);
         vm.prank(officiant);
@@ -63,47 +56,51 @@ contract TestTree is Test {
     }
 
     /// LIFECYCLE METHODS
-    // Test for successful carving via relayer.
     function test_Tree__carve_shouldSucceedWhenCalledByRelayer() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving1"));
+        bytes32 properties = keccak256(abi.encodePacked("style1"));
         string memory message = "Hello, world!";
-        bytes memory signature = helper_signCarve(carvingId, message);
+        bytes memory signature = helper_signCarve(carvingId, properties, message);
 
-        relayer.relayCarve(address(tree), carvingId, message, signature);
-        assertEq(tree.read(carvingId), message);
+        relayer.relayCarve(address(tree), carvingId, properties, message, signature);
+        (bytes32 returnedProperties, string memory returnedMessage) = tree.read(carvingId);
+        assertEq(returnedProperties, properties);
+        assertEq(returnedMessage, message);
     }
 
-    // Test for carving with no signature by an officiant.
     function test_Tree__carve_shouldSucceedWithoutSignatureWhenCalledByOfficiant() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving2"));
+        bytes32 properties = keccak256(abi.encodePacked("style2"));
         string memory message = "Officiant carve.";
 
         vm.prank(officiant);
-        tree.carve(carvingId, message, "");
-        assertEq(tree.read(carvingId), message);
+        tree.carve(carvingId, properties, message, "");
+        (bytes32 returnedProperties, string memory returnedMessage) = tree.read(carvingId);
+        assertEq(returnedProperties, properties);
+        assertEq(returnedMessage, message);
     }
 
-    // Test for successful scratch via relayer.
     function test_Tree__scratch_shouldSucceedWhenCalledByRelayer() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving5"));
+        bytes32 properties = keccak256(abi.encodePacked("style5"));
         string memory message = "To be removed.";
-        bytes memory carveSignature = helper_signCarve(carvingId, message);
-        bytes memory scratchSignature = helper_signCarve(carvingId, "");
+        bytes memory carveSignature = helper_signCarve(carvingId, properties, message);
+        bytes memory scratchSignature = helper_signCarve(carvingId, properties, "");
 
-        relayer.relayCarve(address(tree), carvingId, message, carveSignature);
-        relayer.relayScratch(address(tree), carvingId, scratchSignature);
+        relayer.relayCarve(address(tree), carvingId, properties, message, carveSignature);
+        relayer.relayScratch(address(tree), carvingId, properties, scratchSignature);
 
         vm.expectRevert(Tree.CarvingNotFound.selector);
         tree.read(carvingId);
     }
 
     /// GALLERY METHODS
-    // Test for successful publicizing of a carving.
     function test_Tree__publicize_shouldSucceedWhenCalledByRelayer() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving7"));
+        bytes32 properties = keccak256(abi.encodePacked("style7"));
         string memory message = "Public carving.";
-        bytes memory carveSignature = helper_signCarve(carvingId, message);
-        relayer.relayCarve(address(tree), carvingId, message, carveSignature);
+        bytes memory carveSignature = helper_signCarve(carvingId, properties, message);
+        relayer.relayCarve(address(tree), carvingId, properties, message, carveSignature);
 
         uint256 nonce = tree.galleryNonces(carvingId);
         bytes memory gallerySignature = helper_signGallery(carvingId, nonce);
@@ -115,38 +112,37 @@ contract TestTree is Test {
         assertEq(gallery[0], carvingId);
     }
 
-    // Test for successful hiding of a carving.
     function test_Tree__hide_shouldSucceedWhenCalledByRelayer() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving8"));
+        bytes32 properties = keccak256(abi.encodePacked("style8"));
         string memory message = "Hidden carving.";
-        bytes memory carveSignature = helper_signCarve(carvingId, message);
-        relayer.relayCarve(address(tree), carvingId, message, carveSignature);
+        bytes memory carveSignature = helper_signCarve(carvingId, properties, message);
+        relayer.relayCarve(address(tree), carvingId, properties, message, carveSignature);
 
-        // Publicize the carving first
         uint256 nonce = tree.galleryNonces(carvingId);
         bytes memory publicizeSignature = helper_signGallery(carvingId, nonce);
         vm.prank(officiant);
         tree.publicize(carvingId, publicizeSignature);
 
-        // Increment the nonce for the hide action
         nonce = tree.galleryNonces(carvingId);
         bytes memory hideSignature = helper_signGallery(carvingId, nonce);
         vm.prank(officiant);
         tree.hide(carvingId, hideSignature);
 
-        // Verify the gallery is empty after hiding the carving
         bytes32[] memory gallery = tree.peruse();
         assertEq(gallery.length, 0);
     }
 
     /// PUBLIC METHODS
-    // Test for read function to ensure carvings are correctly retrieved.
-    function test_Tree__read_shouldReturnCorrectMessage() public {
+    function test_Tree__read_shouldReturnCorrectPropertiesAndMessage() public {
         bytes32 carvingId = keccak256(abi.encodePacked("carving9"));
+        bytes32 properties = keccak256(abi.encodePacked("style9"));
         string memory message = "Reading test.";
-        bytes memory signature = helper_signCarve(carvingId, message);
+        bytes memory signature = helper_signCarve(carvingId, properties, message);
 
-        relayer.relayCarve(address(tree), carvingId, message, signature);
-        assertEq(tree.read(carvingId), message);
+        relayer.relayCarve(address(tree), carvingId, properties, message, signature);
+        (bytes32 returnedProperties, string memory returnedMessage) = tree.read(carvingId);
+        assertEq(returnedProperties, properties);
+        assertEq(returnedMessage, message);
     }
 }
