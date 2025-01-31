@@ -90,7 +90,7 @@ def email_all_carvings():
     carving_index = 0
     valid_carving_ids = []
     while failed_carving_indices < parameters.max_index_failures:
-        carving_id = sha256(f"user_id:{carving_index}:{parameters.carving_id_salt}".encode('utf-8')).hexdigest()
+        carving_id = sha256(f"{user_id}:{carving_index}:{parameters.carving_id_salt}".encode('utf-8')).hexdigest()
         carving_index += 1
         carving_text = blockchain_handler.read(carving_id)
         if not carving_text:
