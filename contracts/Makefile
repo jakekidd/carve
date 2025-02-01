@@ -7,7 +7,7 @@
 # curl -L https://foundry.paradigm.xyz | bash
 install:
 	@echo "Installing dependencies..."
-	forge install OpenZeppelin/openzeppelin-contracts
+	forge install OpenZeppelin/openzeppelin-contracts --no-commit
 
 # Build the project
 build:
