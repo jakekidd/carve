@@ -85,7 +85,7 @@ def email_all_carvings():
         email = validate_email(submitted_email, check_deliverability=False).normalized
     except EmailNotValidError as e:
         return render_template('error/generic.html', message=f"Email invalid."), 400
-    user_id = sha256(f"email:{parameters.user_id_salt}".encode('utf-8')).hexdigest()
+    user_id = sha256(f"{email}:{parameters.user_id_salt}".encode('utf-8')).hexdigest()
     failed_carving_indices = 0
     carving_index = 0
     valid_carving_ids = []
