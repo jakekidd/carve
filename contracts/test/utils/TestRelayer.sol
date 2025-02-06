@@ -32,19 +32,9 @@ contract TestRelayer {
      * @param properties The properties for the carving.
      * @param signature The ECDSA signature from an officiant.
      */
-    function relayScratch(
-        address target,
-        bytes32 carvingId,
-        bytes32 properties,
-        bytes memory signature
-    ) external {
+    function relayScratch(address target, bytes32 carvingId, bytes memory signature) external {
         (bool success, ) = target.call(
-            abi.encodeWithSignature(
-                "scratch(bytes32,bytes32,bytes)",
-                carvingId,
-                properties,
-                signature
-            )
+            abi.encodeWithSignature("scratch(bytes32,bytes)", carvingId, signature)
         );
         require(success, "Scratch relay failed");
     }
