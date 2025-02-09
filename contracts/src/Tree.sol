@@ -19,6 +19,8 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 contract Tree {
 
     struct Carving {
+        string to;          // Who the carving is for.
+        string from;        // Who the carving is from.
         bytes32 properties; // Metadata for text display, etc.
         string message;     // The message content.
     }
@@ -27,15 +29,13 @@ contract Tree {
     mapping(bytes32 => Carving) private _carvings;
     /// @notice Array to store public gallery carving IDs.
     bytes32[] public gallery;
-    /// @notice Tracks the nonce for each carving ID (to prevent replay attacks in gallery actions).
-    mapping(bytes32 => uint256) public galleryNonces;
     /// @notice Mapping to manage officiant roles. Officiants can carve and remove.
     mapping(address => bool) public officiants;
     /// @notice Mapping to prevent replay attacks by tracking used signatures.
     mapping(bytes => bool) private _usedSignatures;
 
     /// @notice Event emitted when a carving is created.
-    event CarvingStored(bytes32 indexed carvingId, bytes32 properties, string message);
+    event CarvingStored(bytes32 indexed carvingId, string to, string from, string message, bytes32 properties);
     /// @notice Event emitted when a carving is removed.
     event CarvingDeleted(bytes32 indexed carvingId);
     /// @notice Event emitted when a carving is added to the gallery.
@@ -84,22 +84,18 @@ contract Tree {
      * @param carvingId The unique ID of the carving.
      * @param properties Metadata for the carving (e.g., display styles).
      * @param message The message to be carved.
-     * @param signature The ECDSA signature from an officiant.
      */
-    function carve(bytes32 carvingId, bytes32 properties, string memory message, bytes memory signature) external {
-        _verifySignature(carvingId, properties, message, signature);
+    function carve(bytes32 carvingId, bytes32 properties, string memory message, string memory to, string memory from) external onlyOfficiant {
         if (bytes(_carvings[carvingId].message).length != 0) revert CarvingExists();
-        _carvings[carvingId] = Carving(properties, message);
-        emit CarvingStored(carvingId, properties, message);
+        _carvings[carvingId] = Carving(to, from, properties, message);
+        emit CarvingStored(carvingId, to, from, message, properties);
     }
 
     /**
      * @notice Removes a carving from the contract with relayer validation.
      * @param carvingId The unique ID of the carving to be removed.
-     * @param signature The ECDSA signature from an officiant.
      */
-    function scratch(bytes32 carvingId, bytes memory signature) external {
-        _verifySignature(carvingId, "", "", signature);
+    function scratch(bytes32 carvingId) external onlyOfficiant {
         if (bytes(_carvings[carvingId].message).length == 0) revert CarvingNotFound();
         delete _carvings[carvingId];
         emit CarvingDeleted(carvingId);
@@ -109,8 +105,7 @@ contract Tree {
      * @notice Adds a carving to the public gallery.
      * @param carvingId The unique ID of the carving to be publicized.
      */
-    function publicize(bytes32 carvingId, bytes memory signature) external onlyOfficiant {
-        _verifySignature(carvingId, signature);
+    function publicize(bytes32 carvingId) external onlyOfficiant {
         if (bytes(_carvings[carvingId].message).length == 0) revert CarvingNotFound();
         gallery.push(carvingId);
         emit CarvingPublicized(carvingId);
@@ -120,8 +115,7 @@ contract Tree {
      * @notice Removes a carving from the public gallery.
      * @param carvingId The unique ID of the carving to be removed from the gallery.
      */
-    function hide(bytes32 carvingId, bytes memory signature) external onlyOfficiant {
-        _verifySignature(carvingId, signature);
+    function hide(bytes32 carvingId) external onlyOfficiant {
         for (uint256 i = 0; i < gallery.length; i++) {
             if (gallery[i] == carvingId) {
                 gallery[i] = gallery[gallery.length - 1];
@@ -151,48 +145,5 @@ contract Tree {
         Carving storage carving = _carvings[carvingId];
         if (bytes(carving.message).length == 0) revert CarvingNotFound();
         return (carving.properties, carving.message);
-    }
-
-    /// PRIVATE METHODS
-    /**
-     * @notice Verifies an ECDSA signature from an officiant.
-     * @param carvingId The unique ID of the carving.
-     * @param properties Metadata for the carving.
-     * @param message The message to be carved.
-     * @param signature The ECDSA signature to verify.
-     */
-    function _verifySignature(bytes32 carvingId, bytes32 properties, string memory message, bytes memory signature) private {
-        if (signature.length == 0) {
-            if (!officiants[msg.sender]) revert NotOfficiant();
-            return;
-        }
-        bytes32 messageHash = keccak256(abi.encodePacked(carvingId, properties, message));
-        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
-        address signer = ECDSA.recover(ethSignedMessageHash, signature);
-        if (!officiants[signer]) revert InvalidSignature();
-        if (_usedSignatures[signature]) revert SignatureAlreadyUsed();
-        _usedSignatures[signature] = true;
-    }
-
-    /**
-     * @notice Verifies an ECDSA signature from an officiant using gallery nonce.
-     * @param carvingId The unique ID of the carving.
-     * @param signature The ECDSA signature to verify.
-     */
-    function _verifySignature(bytes32 carvingId, bytes memory signature) private {
-        if (signature.length == 0) {
-            if (!officiants[msg.sender]) revert NotOfficiant();
-            return;
-        }
-
-        uint256 nonce = galleryNonces[carvingId];
-        bytes32 messageHash = keccak256(abi.encodePacked(carvingId, nonce));
-        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
-        address signer = ECDSA.recover(ethSignedMessageHash, signature);
-
-        if (!officiants[signer]) revert InvalidSignature();
-        if (_usedSignatures[signature]) revert SignatureAlreadyUsed();
-        _usedSignatures[signature] = true;
-        galleryNonces[carvingId] = nonce + 1;
     }
 }
