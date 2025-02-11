@@ -2,12 +2,82 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Oppsie</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Carvings</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #f4f4f4;
+            color: #222;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            font-size: 22px;
+            margin-bottom: 15px;
+        }
+        .carve-box {
+            background: #f8f8f8;
+            padding: 15px;
+            border-left: 4px solid #000;
+            text-align: left;
+            margin-bottom: 15px;
+            font-size: 14px;
+            word-break: break-word;
+        }
+        .carve-box a {
+            text-decoration: none;
+            color: #000;
+            font-weight: bold;
+        }
+        .footer {
+            font-size: 12px;
+            color: #666;
+            margin-top: 20px;
+        }
+        .footer a {
+            color: #333;
+            text-decoration: none;
+        }
+    </style>
 </head>
 <body>
-<h1>Something something trained monkeys:</h1>
-{% if message %}
-    <h2>{{ message }}</h2>
-{% endif %}
+    <div class="container">
+        <h1>Your Immutable Carvings</h1>
+        <p>Carved into the blockchain, forever.</p>
+
+        {% if message %}
+            <div class="carve-box">
+                {{ message }}
+            </div>
+        {% endif %}
+
+        {% if carvings %}
+            <h2>Your Carvings</h2>
+            {% for carving in carvings %}
+                <div class="carve-box">
+                    <a href="{{ carving.link }}">{{ carving.message }}</a>
+                </div>
+            {% endfor %}
+        {% else %}
+            <!-- NOTE: Technically shouldn't be reachable, but here just in case we send an email incorrectly. -->
+            <p>You have no carvings yet. Etch something eternal? At <a href="https://carve.fun">carve.fun</a></p>
+        {% endif %}
+        <!-- TODO: @jan can you make this link correctly for new carvings? -->
+        <p><a href="https://carve.fun/new">Make a new carving? →</a></p>
+
+        <div class="footer">
+            <p>Carve is powered by <a href="https://carve.fun">carve.fun</a></p>
+        </div>
+    </div>
 </body>
 </html>
