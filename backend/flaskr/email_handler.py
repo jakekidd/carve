@@ -4,41 +4,28 @@ import os.path
 import google.auth
 from google.auth.transport.requests import Request as TransportRequest
 from google.oauth2.credentials import Credentials as OauthCredentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 import base64
+import json
 from email.message import EmailMessage
-import testing_secrets
+from app import parameters, CarvingOrder
 
 
 # If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/spreadsheets"]
 
 
 def update_token():
-    creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists("token.json"):
-        creds = OauthCredentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(TransportRequest())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("gmail_creds.json", SCOPES)
-            # https://developers.google.com/gmail/api/quickstart/python/
-            creds = flow.run_local_server(port=0)
-    # Save the credentials for the next run
-    with open("token.json", "w") as token_file:
-        token_file.write(creds.to_json())
+    creds = OauthCredentials.from_authorized_user_info(parameters.gmail_token)
+    if creds.expired:
+        creds.refresh(TransportRequest())
+        parameters.gmail_token = json.loads(creds.to_json())
+        parameters.upload_changes()
     return creds
 
 
 # https://developers.google.com/gmail/api/guides/sending#python
-def gmail_send_message(recepient: str, subject: str, body: str):
+def gmail_send_message(recipient: str, subject: str, body: str):
     creds = update_token()
     #try:
     service = build("gmail", "v1", credentials=creds)
@@ -46,8 +33,8 @@ def gmail_send_message(recepient: str, subject: str, body: str):
 
     message.add_alternative(body, subtype='html')
 
-    message["To"] = recepient
-    message["From"] = testing_secrets.sender_email
+    message["To"] = recipient
+    message["From"] = parameters.sender_email
     message["Subject"] = subject
 
     # encoded message
@@ -73,13 +60,24 @@ jinja_env = Environment(
 )
 
 
-def send_template_email(recepient: str, subject: str, template: str, **kwargs) -> bool:
-    #try:
-    gmail_send_message(recepient, subject, jinja_env.get_template(template).render(**kwargs))
-    #except Exception as e:
-    #    print(f"Error sending email: {e}")
-    #    return False
+def send_template_email(recipient: str, subject: str, template: str, **kwargs) -> bool:
+    try:
+        gmail_send_message(recipient, subject, jinja_env.get_template(template).render(**kwargs))
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
+    return True
 
-
-if __name__ == '__main__':
-    send_template_email(testing_secrets.recepient_email, "henlo wordl", "example.html", message="test123")
+def db_to_sheets():
+    creds = update_token()
+    service = build("sheets", "v4", credentials=creds)
+    sheet = service.spreadsheets()
+    values = []
+    orders = CarvingOrder.query.all()
+    values.append(["payment_id", "provided_email", "carving_to", "carving_from", "carving_message", "carving_properties", "carving_id", "carving_txn", "link"])
+    for order in orders:
+        values.append([order.payment_id, order.provided_email, order.carving_to, order.carving_from, order.carving_message, order.carving_properties, order.carving_id, order.carving_txn, order.carving_link])
+    body = {"values": values}
+    request = sheet.values().update(spreadsheetId=parameters.carvings_sheet_id, range="Sheet1", valueInputOption="RAW", body=body)
+    response = request.execute()
+    print(response)

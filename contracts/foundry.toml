@@ -11,7 +11,7 @@ sort_imports = true
 [profile.default]
 solc_version = '0.8.23'
 libs = ['lib']
-optimizer_runs = 10_000
+optimizer_runs = 10_000_000
 
 [profile.optimized]
 via_ir = true
