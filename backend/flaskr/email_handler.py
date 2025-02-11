@@ -74,9 +74,10 @@ def db_to_sheets():
     sheet = service.spreadsheets()
     values = []
     orders = CarvingOrder.query.all()
+    values.append(["payment_id", "provided_email", "carving_to", "carving_from", "carving_message", "carving_properties", "carving_id", "carving_txn", "link"])
     for order in orders:
-        values.append([order.provided_email, order.carving_text])
+        values.append([order.payment_id, order.provided_email, order.carving_to, order.carving_from, order.carving_message, order.carving_properties, order.carving_id, order.carving_txn, order.carving_link])
     body = {"values": values}
-    request = sheet.values().append(spreadsheetId=parameters.carvings_sheet_id, range="A1", valueInputOption="RAW", body=body)
+    request = sheet.values().update(spreadsheetId=parameters.carvings_sheet_id, range="Sheet1", valueInputOption="RAW", body=body)
     response = request.execute()
     print(response)

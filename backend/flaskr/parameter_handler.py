@@ -35,7 +35,7 @@ class ParameterHandler:
         self.infura_api_key = parameters["secrets"]["infura_api_key"]
         self.eth_private_key = HexBytes(parameters["secrets"]["eth_private_key"])
         self.gmail_token = json.loads(parameters["secrets"]["gmail_token"])
-        self.carving_sheet_id = parameters["secrets"]["carvings_sheet_id"]
+        self.carvings_sheet_id = parameters["secrets"]["carvings_sheet_id"]
 
         self.max_index_failures = int(parameters["config"]["max_index_failures"])
         self.carving_from_to_limit = int(parameters["config"]["carving_from_to_limit"])
@@ -50,7 +50,7 @@ class ParameterHandler:
 
     def upload_changes(self):
         store = EC2ParameterStore(region_name="us-east-1")
-        store.put_parameter("secrets/gmail_token", json.dumps(self.gmail_token), "SecureString")
+        store.put_parameter(name="/secrets/gmail_token", value=json.dumps(self.gmail_token), value_type="SecureString", Overwrite=True)
 
     def __init__(self):
         self.update_from_ssm()
